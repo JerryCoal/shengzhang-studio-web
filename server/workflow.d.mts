@@ -1,0 +1,16 @@
+import type { State, Project, ContentRule, CopyReview, CorpusDocument, CorpusReference, EditorDraft, Brief } from '../src/types';
+import type { ZodType } from 'zod';
+export function defaultRules(): ContentRule[];
+export function consumeEditorDraft(state: State, input: unknown): void;
+export function rulesOf(state: State): ContentRule[];
+export function normalizeWorkflow<T extends State>(state: T): T;
+export function saveRules(state: State, input: unknown): { rules: ContentRule[]; revision: number };
+export function screenCopy<T>(input: T, rules?: ContentRule[]): { value: T; review: CopyReview };
+export function reviewObject<T>(input: T, rules?: ContentRule[]): T & { copyReview: CopyReview };
+export function chunkText(text: string): { index: number; text: string }[];
+export function importCorpus(project: Project, input: unknown): CorpusDocument;
+export function changeCorpus(project: Project, id: string, input: unknown, method: string): unknown;
+export function corpusQuery(project: Project, instruction?: string): string;
+export function searchCorpus(project: Project, query: string, limit?: number): CorpusReference[];
+export function corpusPrompt(references: CorpusReference[]): string;
+export function saveEditorDraft(state: State, key: string, input: unknown, schema: ZodType<Brief>): { draft: EditorDraft; project: Pick<Project, 'id' | 'brief' | 'revision'> | null };

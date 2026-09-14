@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: shengzhang-studio-web
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile.web
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: NODE_ENV
+        value: production
+# No persistent disk or database. RENDER_EXTERNAL_URL supplies the canonical HTTPS origin.
+# Each user's data and credentials stay encrypted in that user's browser.

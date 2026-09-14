@@ -1,0 +1,10 @@
+import { createWebRelay } from './web-relay.mjs';
+const port = Number(process.env.PORT || 4326);
+const publicOrigin = process.env.WEB_PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL;
+if (!publicOrigin) throw new Error('请设置 WEB_PUBLIC_ORIGIN 为网站的 HTTPS 根地址');
+const app = createWebRelay({ publicOrigin, allowLocalHttp: process.env.WEB_LOCAL_TEST === '1', staticDirectory: process.env.WEB_STATIC_DIR });
+const server = app.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`生长网页版联网服务已启动，端口 ${port}；不保存工作区或密钥。`));
+server.requestTimeout = 360000;
+let stopping = false;
+const stop = async () => { if (stopping) return; stopping = true; server.close(); await app.locals.close(); server.closeAllConnections(); };
+process.on('SIGTERM', stop); process.on('SIGINT', stop);

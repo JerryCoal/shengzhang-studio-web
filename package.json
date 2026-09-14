@@ -1,0 +1,52 @@
+{
+  "name": "creator-marketing-studio",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc -b && vite build",
+    "build:web": "tsc -b && vite build --mode web --outDir web-dist",
+    "start:web": "node --env-file-if-exists=.env server/web.mjs",
+    "build:static": "node scripts/build-static.mjs",
+    "build:windows": "node scripts/build-windows.mjs",
+    "start:windows-web": "node --use-env-proxy server/windows.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "tsc -b && node --test tests/*.test.mjs",
+    "native:android": "cap add android",
+    "native:ios": "cap add ios",
+    "native:sync": "cap sync",
+    "native:open:android": "cap open android",
+    "native:open:ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
+    "express": "^5.1.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "pdfjs-dist": "5.6.205",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "fake-indexeddb": "^6.2.5",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0"
+  }
+}
