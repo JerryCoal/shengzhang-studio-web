@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { localAPI } from './local-api';
 import { changeLocalState, localUsername, readLocalState } from './local-vault';
 import { mergeRelayState } from '../server/web-merge.mjs';
+import { webPayload } from './web-payload';
 import catalog from './static-settings.json';
 import type { Integrations, Settings, State, WebPrivate } from './types';
 
@@ -45,9 +46,7 @@ async function relay(path: string, method: string, body: unknown, projectId?: st
       state.webPrivate.pending = pending; return pending;
     });
     const identity = localUsername(), pending = started.result, saved = privateOf(started.state);
-    const base = publicState(started.state);
-    base.projects = projectId ? base.projects.filter(p => p.id === projectId) : [];
-    base.activities = []; delete base.projectDrafts;
+    const base = webPayload(started.state, path, body, projectId);
     const credentials: WebPrivate['credentials'] = {};
     const openai = path.includes('/settings/credential') || /\/(strategies|analysis|classify|copy|keyframes)$/.test(path);
     const seedance = /\/(seedance|video-status|generation-reset|tick)$/.test(path);
@@ -93,7 +92,7 @@ async function relay(path: string, method: string, body: unknown, projectId?: st
     });
     if (conflict) throw new Error('联网结果与同时进行的本地编辑有冲突。两份内容已保留；可在设置页导出保留的结果。');
     if (response.status >= 400) throw new Error(response.response.error || '服务商未完成请求，请检查设置');
-    return response.response.state ? { ...response.response, state: publicState(committed.state) } : response.response;
+    return response.hasState ? { ...response.response, state: publicState(committed.state) } : response.response;
   });
 }
 
