@@ -24,7 +24,7 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
   const settings = req => {
     const v = vaultStatus(), local = canUseCredentials(req, config), routes = models.get(), strategy = stageConfig('strategy', routes);
     return { model: strategy.model, openaiConfigured: local && (v.configured || !!config.apiKey) && !v.problem, authEnabled: !!config.password || !!config.profileMode, inputPrice: strategy.inputPrice, outputPrice: strategy.outputPrice,
-      version: '0.4.0', profileMode: !!config.profileMode, routes, models: MODELS, stages: STAGES, priceDate: '2026-09-12', verification: local ? verification : null,
+      version: '0.4.1', profileMode: !!config.profileMode, routes, models: MODELS, stages: STAGES, priceDate: '2026-09-12', verification: local ? verification : null, apiDiagnostic: local ? config.openaiTransport?.diagnostic() : null,
       credential: { ...v, configured: v.configured || !!config.apiKey, suffix: local ? v.suffix : '', local, editable: local && v.supported, source: v.configured ? 'vault' : config.apiKey ? 'environment' : 'none' },
       capabilities: { image: 'gpt-image-2-keyframes', video: 'seedance-and-local', publishing: 'douyin-oauth-and-manual', comments: 'douyin-api-and-import', ai: ['strategy', 'planning', 'copy', 'classification', 'analysis'] } };
   };
@@ -37,11 +37,11 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
   app.put('/api/settings/credential', (req, res) => changeSettings(req, res, async () => {
     d.assert(vault?.status().supported, '此平台还未接入安全保险箱；没有保存密钥', 400);
     const { apiKey } = z.object({ apiKey: z.string().trim().regex(/^sk-[A-Za-z0-9_-]{16,509}$/, '请填写有效格式的 OpenAI API 密钥') }).strict().parse(req.body);
-    await vault.save(apiKey); verification = null;
+    await vault.save(apiKey); verification = null; config.openaiTransport?.reset();
   }));
   app.delete('/api/settings/credential', (req, res) => changeSettings(req, res, async () => {
     d.assert(vault, '此平台没有本机密钥保险箱');
-    vault.remove(); verification = null;
+    vault.remove(); verification = null; config.openaiTransport?.reset();
   }));
   app.post('/api/settings/credential/check', (req, res) => changeSettings(req, res, async () => {
     verification = null;

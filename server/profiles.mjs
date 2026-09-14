@@ -38,7 +38,7 @@ export function createProfileApp(options) {
     next();
   });
   app.use(express.json({ limit: '32mb' }));
-  app.get('/api/health', (_req, res) => res.json({ ok: true, authRequired: true, authMode: 'profiles', version: '0.4.0', localOnly: true }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, authRequired: true, authMode: 'profiles', version: '0.4.1', localOnly: true }));
   app.use('/api', (req, res, next) => req.get('X-Studio-Client') === 'studio-v1' ? next() : res.status(403).json({ error: '请从运营工作台访问' }));
   const tokenHash = req => hash((req.get('Authorization') || '').replace(/^Bearer /, ''));
   const identity = req => { const value = sessions.get(tokenHash(req)); if (!value || value.expiresAt <= Date.now()) throw failure('请重新登录本地工作区', 401); return value; };

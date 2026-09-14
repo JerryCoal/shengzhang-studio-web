@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { useStudio } from '../context';
-import { api, IS_WEB } from '../api';
+import { api, download, IS_WEB } from '../api';
 import { Field, Pill } from '../components';
 import '../ai-settings.css';
 
@@ -11,9 +11,10 @@ export function AISettings() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   useEffect(() => setRoutes(settings.routes), [JSON.stringify(settings.routes)]);
   const credential = settings.credential;
+  const diagnostic = settings.apiDiagnostic;
   const changed = JSON.stringify(routes) !== JSON.stringify(settings.routes);
   return <section className="panel ai-settings">
-    <div className="section-heading"><div className="row gap-10"><span className="section-icon"><KeyRound size={21}/></span><div><h2>API 与模型</h2><small className="muted">让每一步使用合适的算力</small></div></div><Pill color={settings.openaiConfigured ? 'green' : 'gray'}>{settings.openaiConfigured ? settings.verification ? '连接已检查' : '已配置 · 待检查' : '本地模式'}</Pill></div>
+    <div className="section-heading"><div className="row gap-10"><span className="section-icon"><KeyRound size={21}/></span><div><h2>API 与模型</h2><small className="muted">让每一步使用合适的算力</small></div></div><Pill color={diagnostic ? 'amber' : settings.openaiConfigured ? 'green' : 'gray'}>{diagnostic ? '有请求异常 · 查看诊断' : settings.openaiConfigured ? settings.verification ? '密钥已验证 · 额度未验证' : '已配置 · 待检查' : '本地模式'}</Pill></div>
     <div className="ai-settings-columns"><div className="credential-panel">
       <h3><LockKeyhole size={18}/>你的本机密钥</h3>
       <div className="setting-row"><span>服务商</span><b>OpenAI</b></div>
@@ -32,8 +33,15 @@ export function AISettings() {
         {deleteOpen && <div className="info-box delete-key"><p>删除后将无法继续使用这份密钥。已经发出的请求不受影响。</p><button className="button small" disabled={busy} onClick={() => setDeleteOpen(false)}>保留</button><button className="button small" disabled={busy} onClick={() => void run(async () => { await api('/settings/credential', 'DELETE'); await refresh(); setDeleteOpen(false); notify('本机密钥已删除'); })}>确认删除</button></div>}
       </> : <div className="info-box"><ShieldCheck size={19}/><span>{!credential.local ? '请在运行服务的 Windows 电脑上打开 localhost 地址配置个人密钥。手机或远程网页不会把你的密钥提交到另一台服务器。' : '当前系统尚未接入安全保险箱，密钥填写已关闭。此版本支持 Windows 当前账户加密存储。'}</span></div>}
       {credential.problem && <p className="info-box error-box" role="alert">{credential.problem}</p>}
+      {diagnostic && <div className="api-diagnostic" role="alert">
+        <b>最近一次 API 异常</b><p>{diagnostic.message}</p>
+        <small>{new Date(diagnostic.at).toLocaleString()} · {diagnostic.model || (diagnostic.endpoint === 'models' ? '检查连接' : 'OpenAI')} · {diagnostic.code}{diagnostic.upstreamStatus ? ` · HTTP ${diagnostic.upstreamStatus}` : ''}</small>
+        {diagnostic.retryAt && <p>建议重试时间：{new Date(diagnostic.retryAt).toLocaleString()}。等待期间再次点击不会发送同模型的生成请求。</p>}
+        <button className="text-button" onClick={() => download(new Blob([JSON.stringify({ version: settings.version, ...diagnostic }, null, 2)], { type: 'application/json' }), 'OpenAI-诊断结果.json')}>导出诊断结果（不含密钥和项目资料）</button>
+      </div>}
       {settings.verification && <div className="connection-result" role="status"><b>连接检查结果</b>{settings.verification.models.map(m => <div className="row between" key={m.model}><span>{m.model}</span><Pill color={m.available ? 'green' : 'amber'}>{m.available ? '账户可见' : '未在列表中'}</Pill></div>)}<small>{settings.verification.note}</small></div>}
       <a className="text-button green" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">在 OpenAI 创建 API Key ↗</a>
+      <div className="api-help"><b>密钥能保存，为什么还不能生成？</b><p>创建密钥不等于获得 API 额度。“检查连接”只读取模型列表，不进行付费生成，也无法查询账户余额。应用里的项目预算只是费用提醒，不会向 OpenAI 充值。</p><div className="row gap-10 wrap"><a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noreferrer">检查 Billing 余额 ↗</a><a href="https://platform.openai.com/settings/organization/limits" target="_blank" rel="noreferrer">查看 Limits 上限 ↗</a><a href="https://platform.openai.com/settings/organization/projects" target="_blank" rel="noreferrer">检查项目与权限 ↗</a></div><p>先处理诊断提示，再回到原来的生成步骤重试。模型列表可见仍不代表拥有该模型的生成权限。</p></div>
       <details className="setup-details"><summary>密钥保护的范围</summary>{IS_WEB ? <p>密钥使用 AES-GCM 加密后存入浏览器 IndexedDB，只有当前本地用户登录后可使用。后端为完成请求临时处理密钥与必要的项目数据，不提供账号数据库或项目存储。服务商按其自身条款处理请求。清除浏览器数据会同时删除密钥。请只在信任的设备使用，公共设备不应开启快捷登录。</p> : <><p>加密文件位于这台电脑，绑定保存时的 Windows 账户。独立用户版还需要本地登录密码解锁；重新登录后无需重复填写 API 密钥。请求时会短暂解密到本机服务内存；不要向不可信程序开放此 Windows 账户。</p><p>安卓和 iPhone 的设备密钥存储需要分别接入 Keystore / Keychain；当前移动端尚未提供个人密钥填写。工作区备份不包含密钥，但请勿公开整个 data 文件夹。</p></>}</details>
     </div><div className="model-routing">
       <div className="row between"><h3><Sparkles size={18}/>按任务分配模型</h3><button className="text-button green" disabled={busy || !credential.local} onClick={() => setRoutes(Object.fromEntries(settings.stages.map(s => [s.id, s.model])) as typeof routes)}>恢复推荐</button></div>

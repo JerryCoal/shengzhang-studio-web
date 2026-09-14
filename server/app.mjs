@@ -5,12 +5,16 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import * as domain from './domain.mjs';
 import { mountAIRoutes } from './ai-routes.mjs';
+import { createOpenAITransport } from './openai-errors.mjs';
 import { mountIntegrations } from './integrations.mjs';
 import { consumeEditorDraft, rulesOf, saveRules, importCorpus, changeCorpus, searchCorpus, saveEditorDraft, reviewObject } from './workflow.mjs';
 
 export function createApp(store, options = {}) {
   const app = express();
   const config = { apiKey: '', password: '', secret: randomBytes(32).toString('hex'), allowedOrigins: [], ...options };
+  const openaiTransport = createOpenAITransport(config.fetcher);
+  config.fetcher = openaiTransport.fetch;
+  config.openaiTransport = app.locals.openaiTransport = openaiTransport;
   const sessionHash = value => createHmac('sha256', config.secret).update(value).digest('hex');
   const sessions = new Map();
   const loginAttempts = new Map();
@@ -192,7 +196,7 @@ export function createApp(store, options = {}) {
     if (error.type === 'entity.too.large') return res.status(413).json({ error: '文件过大，请使用较小的素材' });
     if (error.type === 'entity.parse.failed') return res.status(400).json({ error: '请求数据格式错误' });
     if (!error.status) console.error('Request failed: internal error');
-    res.status(error.status || 500).json({ error: error.status ? error.message : '服务暂时遇到问题，请重试。数据已保留。' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : '服务暂时遇到问题，请重试。数据已保留。', ...(error.diagnostic ? { diagnostic: error.diagnostic } : {}) });
   });
   return app;
 }

@@ -23,6 +23,12 @@
 .connection-result { padding: 15px; margin-bottom: 18px; border: 1px solid #dbe4d7; border-radius: 10px; background: white; }
 .connection-result > .row { gap: 8px; font-size: 12px; padding: 10px 0; flex-wrap: wrap; }
 .connection-result > small { display: block; line-height: 1.7; color: #747c74; }
+.api-diagnostic { margin: 18px 0; padding: 16px; border: 1px solid #e6c791; border-radius: 12px; background: #fff9ed; color: #77511d; overflow-wrap: anywhere; }
+.api-diagnostic p, .api-help p { font-size: 13px; line-height: 1.8; margin: 10px 0; }
+.api-diagnostic small { display: block; line-height: 1.7; }
+.api-diagnostic button { margin-top: 12px; font-size: 12px; text-align: left; white-space: normal; }
+.api-help { margin: 20px 0; padding-top: 16px; border-top: 1px solid #e4e7e0; }
+.api-help a { font-size: 12px; color: #315444; }
 .model-routing > .muted { font-size: 13px; line-height: 1.7; }
 .model-route { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 18px 0; border-bottom: 1px solid #e8eae5; }
 .model-route > div { min-width: 0; }

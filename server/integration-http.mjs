@@ -1,12 +1,16 @@
 import { lookup } from 'node:dns/promises';
 import { assert } from './domain.mjs';
+import { openAIResponseError } from './openai-errors.mjs';
 
 export const integrationError = (message, status = 502, extra = {}) => Object.assign(new Error(message), { status, ...extra });
 export async function requestJSON(url, init, fetcher = fetch, label = '服务商', limit = 2_000_000) {
   let response;
   try {
     response = await fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(init.timeout || 180000) });
-    if (!response.ok) throw integrationError(`${label}请求被拒绝（HTTP ${response.status}），请检查权限、余额或稍后重试。`, 502, { noCharge: response.status >= 400 && response.status < 500 });
+    if (!response.ok) {
+      if (new URL(url).origin === 'https://api.openai.com') throw await openAIResponseError(response);
+      throw integrationError(`${label}请求被拒绝（HTTP ${response.status}），请检查权限、余额或稍后重试。`, 502, { noCharge: response.status >= 400 && response.status < 500 });
+    }
     const bytes = await readBounded(response, limit);
     return JSON.parse(bytes.toString('utf8'));
   } catch (error) {

@@ -85,7 +85,7 @@ export function createWebRelay({ staticDirectory = resolve('web-dist'), publicOr
         await workspace?.locals.integrations.close();
         // Return modified credentials only when the platform has refreshed/exchanged tokens.
         const response = { ...payload }, hasState = Object.hasOwn(response, 'state'); delete response.state;
-        json.call(res.status(200), { status, response, hasState, state, credentials: input.credentials.douyin ? { douyin: input.credentials.douyin } : {}, authorizations: [...authorizations] });
+        json.call(res.status(200), { status, response, hasState, state, apiDiagnostic: workspace?.locals.openaiTransport.diagnostic() || null, credentials: input.credentials.douyin ? { douyin: input.credentials.douyin } : {}, authorizations: [...authorizations] });
       } catch { if (!res.headersSent) json.call(res.status(500), { error: '本次请求未能完成，请核对服务商记录后再试' }); }
       finally {
         req.body = undefined; state = undefined;

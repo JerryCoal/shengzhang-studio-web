@@ -14,7 +14,7 @@ const pendingMessage = '有一项联网请求尚未确认。请核对服务商�
 function settingsOf(state: State): Settings {
   const saved = privateOf(state), model = saved.routes.strategy;
   return { ...catalog, routes: saved.routes, model, ...catalog.models[model as keyof typeof catalog.models], authEnabled: true, version: '0.5.0 · 联网网页版', browserStorage: true,
-    openaiConfigured: !!saved.credentials.openai, verification: saved.verification,
+    openaiConfigured: !!saved.credentials.openai, verification: saved.verification, apiDiagnostic: saved.apiDiagnostic,
     pendingWebRequest: saved.pending, recoveredWebResults: saved.recovery?.length || 0,
     credential: { supported: true, editable: true, local: true, configured: !!saved.credentials.openai, suffix: saved.credentials.openai?.slice(-4) || '', source: saved.credentials.openai ? 'vault' : 'none', protection: '浏览器 · 登录密码 AES-GCM 加密', problem: '' },
   } as Settings;
@@ -42,6 +42,9 @@ async function relay(path: string, method: string, body: unknown, projectId?: st
     const started = await changeLocalState(state => {
       state.webPrivate ||= defaults();
       if (state.webPrivate.pending) throw new Error(pendingMessage);
+      const limited = state.webPrivate.apiDiagnostic;
+      const openaiModel = path.endsWith('/keyframes') ? 'gpt-image-2' : path.endsWith('/copy') ? state.webPrivate.routes.copy : path.endsWith('/classify') ? state.webPrivate.routes.classification : path.endsWith('/analysis') ? state.webPrivate.routes.analysis : path.endsWith('/strategies') ? state.webPrivate.routes[(body as { stage?: 'strategy' | 'planning' })?.stage || 'strategy'] : '';
+      if (limited?.kind === 'rate_limit' && limited.model === openaiModel && limited.retryAt && Date.parse(limited.retryAt) > Date.now()) throw new Error(`OpenAI 仍在限流等待期，请 ${Math.ceil((Date.parse(limited.retryAt) - Date.now()) / 1000)} 秒后再试。本次未发送新请求。`);
       const pending = { id: crypto.randomUUID(), path, projectId, at: new Date().toISOString() };
       state.webPrivate.pending = pending; return pending;
     });
@@ -88,6 +91,7 @@ async function relay(path: string, method: string, body: unknown, projectId?: st
       if (douyin && response.credentials?.douyin) current.credentials.douyin = response.credentials.douyin;
       if (douyin) current.authorizations = response.authorizations || [];
       if (path === '/settings/credential/check') current.verification = response.response.verification || null;
+      if (openai) current.apiDiagnostic = response.apiDiagnostic || (path === '/settings/credential/check' && current.apiDiagnostic?.endpoint !== 'models' ? current.apiDiagnostic : null);
       delete current.pending;
     });
     if (conflict) throw new Error('联网结果与同时进行的本地编辑有冲突。两份内容已保留；可在设置页导出保留的结果。');
@@ -116,7 +120,7 @@ export async function webAPI<T>(path: string, method = 'GET', body?: unknown): P
     });
   }
   if (path === '/settings/credential' && ['PUT', 'DELETE'].includes(method)) {
-    await saveConnection(saved => { if (method === 'DELETE') delete saved.credentials.openai; else saved.credentials.openai = z.object({ apiKey: z.string().trim().regex(/^sk-[A-Za-z0-9_-]{16,509}$/) }).strict().parse(body).apiKey; saved.verification = null; });
+    await saveConnection(saved => { if (method === 'DELETE') delete saved.credentials.openai; else saved.credentials.openai = z.object({ apiKey: z.string().trim().regex(/^sk-[A-Za-z0-9_-]{16,509}$/) }).strict().parse(body).apiKey; saved.verification = null; saved.apiDiagnostic = null; });
     return settingsOf(await readLocalState()) as T;
   }
   if (path === '/settings/models' && method === 'PUT') {
