@@ -3,6 +3,7 @@ import { rulesOf, corpusQuery, searchCorpus, screenCopy } from './workflow.mjs';
 import * as d from './domain.mjs';
 import { MODELS, STAGES, createModelStore, stageConfig } from './models.mjs';
 import { estimateReservation, generateStage, tokenCost, verifyModels } from './ai.mjs';
+import { verifyDeepSeek } from './deepseek.mjs';
 
 const loopback = address => ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost', '[::1]'].includes(address);
 export function isLocalClient(req) {
@@ -18,14 +19,18 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
   const requireLocal = req => d.assert(canUseCredentials(req, config), '请从已解锁的工作区使用自己的 API 密钥', 403);
   const models = config.modelStore || createModelStore();
   const vault = config.vault;
-  let verification = null, settingsBusy = false;
+  let verification = null, deepseekVerification = null, settingsBusy = false;
   const vaultStatus = () => vault?.status() || { supported: false, configured: false, suffix: '', protection: '', problem: '' };
-  const getKey = async req => { requireLocal(req); const status = vaultStatus(); d.assert(!status.problem, status.problem, 503); const key = status.configured ? await vault.getKey() : config.apiKey; d.assert(key, '请先在设置页保存 API 密钥'); return key; };
+  const getKey = async (req, provider = 'openai') => { requireLocal(req); const selected = provider === 'deepseek' ? config.deepseekVault : vault; const status = selected?.status() || {}; d.assert(!status.problem, status.problem, 503); const key = status.configured ? await selected.getKey() : provider === 'openai' ? config.apiKey : ''; d.assert(key, `请先在设置页保存 ${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} API 密钥`); return key; };
   const settings = req => {
     const v = vaultStatus(), local = canUseCredentials(req, config), routes = models.get(), strategy = stageConfig('strategy', routes);
+    const credential = { ...v, configured: v.configured || !!config.apiKey, suffix: local ? v.suffix : '', local, editable: local && v.supported, source: v.configured ? 'vault' : config.apiKey ? 'environment' : 'none' };
+    const ds = config.deepseekVault?.status() || { supported: false, configured: false, suffix: '', problem: '', protection: '' };
+    const dsCredential = { ...ds, suffix: local ? ds.suffix : '', local, editable: local && ds.supported, source: ds.configured ? 'vault' : 'none' };
+    const providers = { openai: { configured: local && credential.configured && !v.problem, credential, verification: local ? verification : null, apiDiagnostic: local ? config.openaiTransport?.diagnostic() : null }, deepseek: { configured: local && ds.configured && !ds.problem, credential: dsCredential, verification: local ? deepseekVerification : null, apiDiagnostic: local ? config.deepseekTransport?.diagnostic() : null } };
     return { model: strategy.model, openaiConfigured: local && (v.configured || !!config.apiKey) && !v.problem, authEnabled: !!config.password || !!config.profileMode, inputPrice: strategy.inputPrice, outputPrice: strategy.outputPrice,
-      version: '0.4.1', profileMode: !!config.profileMode, routes, models: MODELS, stages: STAGES, priceDate: '2026-09-12', verification: local ? verification : null, apiDiagnostic: local ? config.openaiTransport?.diagnostic() : null,
-      credential: { ...v, configured: v.configured || !!config.apiKey, suffix: local ? v.suffix : '', local, editable: local && v.supported, source: v.configured ? 'vault' : config.apiKey ? 'environment' : 'none' },
+      version: '0.4.2', profileMode: !!config.profileMode, routes, models: MODELS, stages: STAGES, priceDate: '2026-09-14', verification: local ? verification : null, apiDiagnostic: local ? config.openaiTransport?.diagnostic() : null,
+      credential, providers,
       capabilities: { image: 'gpt-image-2-keyframes', video: 'seedance-and-local', publishing: 'douyin-oauth-and-manual', comments: 'douyin-api-and-import', ai: ['strategy', 'planning', 'copy', 'classification', 'analysis'] } };
   };
   const changeSettings = async (req, res, work) => {
@@ -45,7 +50,19 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
   }));
   app.post('/api/settings/credential/check', (req, res) => changeSettings(req, res, async () => {
     verification = null;
-    verification = await verifyModels(await getKey(req), Object.values(models.get()), config.fetcher);
+    verification = await verifyModels(await getKey(req), Object.keys(MODELS).filter(m => MODELS[m].provider === 'openai'), config.fetcher);
+  }));
+  app.put('/api/settings/providers/deepseek/credential', (req, res) => changeSettings(req, res, async () => {
+    d.assert(config.deepseekVault?.status().supported, '此平台还未接入安全保险箱；没有保存密钥', 400);
+    const { apiKey } = z.object({ apiKey: z.string().trim().regex(/^sk-[A-Za-z0-9_-]{16,509}$/, '请填写有效格式的 DeepSeek API 密钥') }).strict().parse(req.body);
+    await config.deepseekVault.save(apiKey); deepseekVerification = null; config.deepseekTransport?.reset();
+  }));
+  app.delete('/api/settings/providers/deepseek/credential', (req, res) => changeSettings(req, res, async () => {
+    d.assert(config.deepseekVault, '此平台没有 DeepSeek 密钥保险箱');
+    config.deepseekVault.remove(); deepseekVerification = null; config.deepseekTransport?.reset();
+  }));
+  app.post('/api/settings/providers/deepseek/credential/check', (req, res) => changeSettings(req, res, async () => {
+    deepseekVerification = null; deepseekVerification = await verifyDeepSeek(await getKey(req, 'deepseek'), config.fetcher);
   }));
   app.put('/api/settings/models', (req, res) => changeSettings(req, res, async () => { models.save(req.body); verification = null; }));
 
@@ -56,7 +73,7 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
     let jobId, reservation, payloadFingerprint, output;
     const route = stageConfig(stage, models.get());
     try {
-      const apiKey = await getKey(req);
+      const apiKey = await getKey(req, route.provider);
       const payload = prepare(project(store.get(), req.params.id));
       payloadFingerprint = JSON.stringify(payload);
       d.assert(Buffer.byteLength(JSON.stringify(payload)) <= 110000, '本次内容过长，请缩短资料或减少评论后再生成');
@@ -94,7 +111,7 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
   app.post('/api/projects/:id/strategies', (req, res) => {
     const data = z.object({ mode: z.enum(['demo', 'openai']), stage: z.enum(['strategy', 'planning']).default('strategy'), instruction: z.string().trim().max(4000).default(''), query: z.string().trim().max(500).default('') }).parse(req.body);
     if (data.mode === 'demo') return mutate(req, res, (p, state) => { const s = d.makeDraft(p, {}, data.instruction, 'demo', rulesOf(state), data.query); d.activity(state, '策略草稿已生成', `V${s.version} · 检索语料并筛选文案`, p.id); return s; });
-    return execute(req, res, data.stage, p => ({ brief: p.brief, instruction: data.instruction, retrievalQuery: data.query || corpusQuery(p, data.instruction), corpusReferences: searchCorpus(p, data.query || corpusQuery(p, data.instruction)), previousStrategy: p.strategies.at(-1), feedback: p.experiences.filter(e => e.active).map(e => ({ text: e.text, evidence: p.insights.find(i => i.id === e.insightId)?.evidenceIds.map(id => p.comments.find(c => c.id === id)?.text).filter(Boolean) || [] })) }), (p, value, model, payload, state) => { const s = d.makeDraft(p, value, '', 'openai', rulesOf(state), payload.retrievalQuery); s.model = model; s.stage = data.stage; return s; });
+    return execute(req, res, data.stage, p => ({ brief: p.brief, instruction: data.instruction, retrievalQuery: data.query || corpusQuery(p, data.instruction), corpusReferences: searchCorpus(p, data.query || corpusQuery(p, data.instruction)), previousStrategy: p.strategies.at(-1), feedback: p.experiences.filter(e => e.active).map(e => ({ text: e.text, evidence: p.insights.find(i => i.id === e.insightId)?.evidenceIds.map(id => p.comments.find(c => c.id === id)?.text).filter(Boolean) || [] })) }), (p, value, model, payload, state) => { const s = d.makeDraft(p, value, '', MODELS[model].provider, rulesOf(state), payload.retrievalQuery); s.model = model; s.stage = data.stage; return s; });
   });
   app.post('/api/projects/:id/assets/:assetId/copy', (req, res) => execute(req, res, 'copy', p => {
     const a = p.assets.find(a => a.id === req.params.assetId); d.assert(a, '内容不存在', 404);
@@ -121,7 +138,7 @@ export function mountAIRoutes(app, store, config, { project, mutate, activeJobs 
       d.assert(comments.length > 0 && comments.length <= 200, 'AI 复盘当前支持 1–200 条有效评论，更多评论请使用本地规则分析'); return { brief: p.brief, comments };
     }, (p, value, model, payload) => {
       const analysisId = d.id(), comments = p.comments.filter(c => payload.comments.some(item => item.id === c.id)), times = comments.map(c => c.importedAt).sort();
-      const insights = value.insights.map(item => { const evidenceIds = [...new Set(item.evidenceIds)]; return { ...item, evidenceIds, id: d.id(), analysisId, publicationIds: [...new Set(comments.filter(c => evidenceIds.includes(c.id)).map(c => c.publicationId))], sampleSize: comments.length, count: evidenceIds.length, provisional: comments.length < 30, status: 'pending', createdAt: d.now(), windowStart: times[0], windowEnd: times.at(-1), source: 'openai', model, scope: '仅限本项目已导入的有效评论；导入时间不代表评论发表时间；观察不等于因果。' }; });
+      const insights = value.insights.map(item => { const evidenceIds = [...new Set(item.evidenceIds)]; return { ...item, evidenceIds, id: d.id(), analysisId, publicationIds: [...new Set(comments.filter(c => evidenceIds.includes(c.id)).map(c => c.publicationId))], sampleSize: comments.length, count: evidenceIds.length, provisional: comments.length < 30, status: 'pending', createdAt: d.now(), windowStart: times[0], windowEnd: times.at(-1), source: MODELS[model].provider, model, scope: '仅限本项目已导入的有效评论；导入时间不代表评论发表时间；观察不等于因果。' }; });
       p.insights.push(...insights); return insights;
     });
   });

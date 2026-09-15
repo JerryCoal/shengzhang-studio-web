@@ -61,7 +61,7 @@ export function makeDraft(p, changes = {}, instruction = '', source = 'demo', ru
   }
   const retrievalQuery = query || corpusQuery(p, instruction);
   const corpusReferences = searchCorpus(p, retrievalQuery);
-  if (source !== 'openai') base.prompt = (base.prompt + corpusPrompt(corpusReferences)).slice(0, 16000);
+  if (!['openai', 'deepseek'].includes(source)) base.prompt = (base.prompt + corpusPrompt(corpusReferences)).slice(0, 16000);
   reviewObject(base, rules);
   const draft = { ...base, retrievalQuery, corpusReferences, briefSnapshot: structuredClone(brief), id: id(), version: Math.max(0, ...p.strategies.map(s => s.version)) + 1,
     status: 'draft', source, createdAt: now(), confirmedAt: null, feedbackIds: accepted.map(e => e.id), tasks: [],

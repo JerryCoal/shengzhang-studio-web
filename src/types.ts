@@ -21,16 +21,19 @@ export type Usage = { id: string; amountUsd: number; status: string; estimated: 
 export type Project = { corpus?: CorpusDocument[]; id: string; brief: Brief; revision: number; createdAt: string; updatedAt: string; sample: boolean; strategies: Strategy[]; assets: Asset[]; publications: Publication[]; comments: Comment[]; insights: Insight[]; experiences: Experience[]; usage: Usage[]; imageData: string; audioData: string; lastImportAt: string | null };
 export type Account = { id: string; name: string; platform: Platform; connected: boolean; autoPublish: boolean; autoComments: boolean; note: string };
 export type Activity = { id: string; title: string; detail: string; projectId: string; at: string };
-export type WebPrivate = { apiDiagnostic?: APIDiagnostic | null; credentials: { openai?: string; seedance?: string; douyin?: string }; routes: Record<Stage, string>; seedance: { region: 'volcengine' | 'byteplus'; model: string; reservationUsd: number; outputPriceUsd: number }; authorizations: [string, { accountId: string; expiresAt: number; redirectUri: string }][]; verification: Settings['verification']; pending?: { id: string; path: string; projectId?: string; at: string }; recovery?: { at: string; projects: Project[] }[] };
+export type WebPrivate = { deepseekVerification?: Settings['verification']; deepseekDiagnostic?: APIDiagnostic | null; apiDiagnostic?: APIDiagnostic | null; credentials: { openai?: string; deepseek?: string; seedance?: string; douyin?: string }; routes: Record<Stage, string>; seedance: { region: 'volcengine' | 'byteplus'; model: string; reservationUsd: number; outputPriceUsd: number }; authorizations: [string, { accountId: string; expiresAt: number; redirectUri: string }][]; verification: Settings['verification']; pending?: { id: string; path: string; projectId?: string; at: string }; recovery?: { at: string; projects: Project[] }[] };
 export type State = { webPrivate?: WebPrivate; contentRules?: ContentRule[]; rulesRevision?: number; projectDrafts?: Record<string, EditorDraft>; schemaVersion: number; projects: Project[]; accounts: Account[]; activities: Activity[] };
 export type Stage = 'strategy' | 'planning' | 'copy' | 'classification' | 'analysis';
-export type APIDiagnostic = { provider: 'openai'; kind: string; code: string; upstreamStatus?: number; message: string; at: string; endpoint?: string; model?: string; retryAfterSeconds?: number; retryAt?: string };
+export type TextProvider = 'openai' | 'deepseek';
+export type APIDiagnostic = { provider: TextProvider; kind: string; code: string; upstreamStatus?: number; message: string; at: string; endpoint?: string; model?: string; retryAfterSeconds?: number; retryAt?: string };
+export type ProviderConnection = { configured: boolean; credential: Settings['credential']; verification: Settings['verification']; apiDiagnostic?: APIDiagnostic | null };
 export type Settings = {
   apiDiagnostic?: APIDiagnostic | null;
+  providers?: Record<TextProvider, ProviderConnection>;
   model: string; openaiConfigured: boolean; authEnabled: boolean; inputPrice: number; outputPrice: number; version: string; profileMode?: boolean; browserStorage?: boolean; pendingWebRequest?: WebPrivate['pending']; recoveredWebResults?: number;
-  routes: Record<Stage, string>; models: Record<string, { label: string; inputPrice: number; outputPrice: number; description: string }>;
+  routes: Record<Stage, string>; models: Record<string, { provider?: TextProvider; label: string; inputPrice: number; outputPrice: number; description: string; priceNote?: string }>;
   stages: { id: Stage; label: string; model: string; effort: string; reason: string }[]; priceDate: string;
   credential: { supported: boolean; configured: boolean; suffix: string; protection: string; problem: string; local: boolean; editable: boolean; source: 'vault' | 'environment' | 'none' };
-  verification: { checkedAt: string; models: { model: string; available: boolean }[]; note: string } | null;
+  verification: { checkedAt: string; models: { model: string; available: boolean }[]; note: string; balance?: { available: boolean; items: { currency: string; total: string }[] } } | null;
 };
 export type Integrations = { local: boolean; seedance: { region: 'volcengine' | 'byteplus'; model: string; reservationUsd: number; outputPriceUsd: number; configured: boolean; supported: boolean; suffix: string; problem: string }; douyin: { configured: boolean; supported: boolean; clientKeySuffix?: string; redirectUri: string; accounts: { id: string; scopes: string[]; expiresAt: number; refreshExpiresAt: number; connectionId: string }[] } };

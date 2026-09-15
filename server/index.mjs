@@ -14,6 +14,7 @@ store.mutate(state => { for (const p of state.projects) for (const usage of p.us
 const dataDirectory = process.env.DB_PATH ? dirname(resolve(process.env.DB_PATH)) : resolve('data');
 const app = createApp(store, {
   vault: createVault(resolve(dataDirectory, 'private/openai.dpapi.json')),
+  deepseekVault: createVault(resolve(dataDirectory, 'private/deepseek.dpapi.json')),
   seedanceVault: createVault(resolve(dataDirectory, 'private/seedance.dpapi.json')),
   douyinVault: createVault(resolve(dataDirectory, 'private/douyin.dpapi.json')),
   integrationPreferences: createIntegrationPreferences(resolve(dataDirectory, 'integration-settings.json')),

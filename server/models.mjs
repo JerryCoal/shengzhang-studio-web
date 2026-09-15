@@ -2,9 +2,11 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { atomicJSON } from './vault.mjs';
 export const MODELS = {
-  'gpt-5.4': { label: 'GPT-5.4', inputPrice: 2.5, outputPrice: 15, description: '适合复杂策划、约束协调和迭代判断' },
-  'gpt-5.4-mini': { label: 'GPT-5.4 mini', inputPrice: 0.75, outputPrice: 4.5, description: '平衡内容质量、速度和费用' },
-  'gpt-5.4-nano': { label: 'GPT-5.4 nano', inputPrice: 0.2, outputPrice: 1.25, description: '适合标签、情绪等简单结构化任务' },
+  'gpt-5.4': { provider: 'openai', label: 'GPT-5.4', inputPrice: 2.5, outputPrice: 15, description: '适合复杂策划、约束协调和迭代判断' },
+  'gpt-5.4-mini': { provider: 'openai', label: 'GPT-5.4 mini', inputPrice: 0.75, outputPrice: 4.5, description: '平衡内容质量、速度和费用' },
+  'gpt-5.4-nano': { provider: 'openai', label: 'GPT-5.4 nano', inputPrice: 0.2, outputPrice: 1.25, description: '适合标签、情绪等简单结构化任务' },
+  'deepseek-flash': { provider: 'deepseek', label: 'DeepSeek Flash', inputPrice: 0.3, outputPrice: 1.2, priceNote: '按高峰、输入缓存未命中单价估算；实际账单可能更低', description: '低成本处理文案、评论分类和日常复盘' },
+  'deepseek-v4-pro': { provider: 'deepseek', label: 'DeepSeek V4 Pro', inputPrice: 1.32, outputPrice: 3.96, priceNote: '按高峰、输入缓存未命中单价估算；实际账单可能更低', description: '适合需要综合判断的策略与下期策划' },
 };
 export const STAGES = [
   { id: 'strategy', label: '宣传策略', model: 'gpt-5.4', effort: 'medium', maxTokens: 4500, reason: '同时考虑品牌、受众、渠道与事实约束，优先保证方向质量。' },
@@ -14,10 +16,15 @@ export const STAGES = [
   { id: 'analysis', label: '评论复盘', model: 'gpt-5.4-mini', effort: 'medium', maxTokens: 4500, reason: '从评论中提取观察、原文依据与可验证建议。' },
 ];
 export const DEFAULT_ROUTES = Object.fromEntries(STAGES.map(s => [s.id, s.model]));
+export const DEEPSEEK_ROUTES = Object.fromEntries(STAGES.map(s => [s.id, ['strategy', 'planning'].includes(s.id) ? 'deepseek-v4-pro' : 'deepseek-flash']));
 export const routesSchema = z.object(Object.fromEntries(STAGES.map(s => [s.id, z.enum(Object.keys(MODELS))]))).strict();
 export function createModelStore(file) {
   let routes = { ...DEFAULT_ROUTES };
   if (file) { try { routes = routesSchema.parse(JSON.parse(readFileSync(file, 'utf8'))); } catch (error) { if (error.code !== 'ENOENT') throw new Error('模型配置文件无效，请检查 model-settings.json'); } }
   return { get: () => ({ ...routes }), save(value) { const next = routesSchema.parse(value); if (file) atomicJSON(file, next); routes = next; return this.get(); } };
 }
-export function stageConfig(stage, routes) { const definition = STAGES.find(s => s.id === stage); const model = routes[stage]; return { ...definition, model, ...MODELS[model] }; }
+export function stageConfig(stage, routes) {
+  const definition = STAGES.find(s => s.id === stage), model = routes[stage], metadata = MODELS[model];
+  const thinking = ['strategy', 'planning', 'analysis'].includes(stage);
+  return { ...definition, model, ...metadata, ...(metadata.provider === 'deepseek' ? { thinking, maxTokens: thinking ? 8000 : definition.maxTokens } : {}) };
+}

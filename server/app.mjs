@@ -6,6 +6,7 @@ import { z } from 'zod';
 import * as domain from './domain.mjs';
 import { mountAIRoutes } from './ai-routes.mjs';
 import { createOpenAITransport } from './openai-errors.mjs';
+import { createDeepSeekTransport } from './deepseek.mjs';
 import { mountIntegrations } from './integrations.mjs';
 import { consumeEditorDraft, rulesOf, saveRules, importCorpus, changeCorpus, searchCorpus, saveEditorDraft, reviewObject } from './workflow.mjs';
 
@@ -13,7 +14,9 @@ export function createApp(store, options = {}) {
   const app = express();
   const config = { apiKey: '', password: '', secret: randomBytes(32).toString('hex'), allowedOrigins: [], ...options };
   const openaiTransport = createOpenAITransport(config.fetcher);
-  config.fetcher = openaiTransport.fetch;
+  const deepseekTransport = createDeepSeekTransport(openaiTransport.fetch);
+  config.fetcher = deepseekTransport.fetch;
+  config.deepseekTransport = app.locals.deepseekTransport = deepseekTransport;
   config.openaiTransport = app.locals.openaiTransport = openaiTransport;
   const sessionHash = value => createHmac('sha256', config.secret).update(value).digest('hex');
   const sessions = new Map();

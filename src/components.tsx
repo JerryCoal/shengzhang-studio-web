@@ -1,3 +1,4 @@
+import { canGenerate } from './model-provider';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { ArrowUpRight, Check, ChevronRight, Leaf, Plus, Sparkles, X } from 'lucide-react';
 import type { Platform, Project } from './types';
@@ -31,4 +32,4 @@ export function Workflow({ project }: { project: Project }) {
   const current = flags.indexOf(false);
   return <div className="workflow">{steps.map((step, i) => <button key={step.page} onClick={() => go(step.page, project.id)} className={`${flags[i] ? 'complete' : ''} ${i === current ? 'current' : ''}`}><span className="step-number">{flags[i] ? <Check size={16}/> : String(i + 1).padStart(2, '0')}</span><span>{step.label}</span>{i < 5 && <ChevronRight className="step-arrow" size={14}/>}</button>)}</div>;
 }
-export function ModeNotice() { const { settings } = useStudio(); return <div className="mode-notice"><Sparkles size={16}/><span>{settings.openaiConfigured ? `${settings.model} 已配置 · 生成前按项目预算检查额度` : '本地体验模式 · 策略来自模板，图片与视频由本地素材合成'}</span></div>; }
+export function ModeNotice() { const { settings } = useStudio(); return <div className="mode-notice"><Sparkles size={16}/><span>{canGenerate(settings, 'strategy') ? `${settings.model} 已配置 · 生成前按项目预算检查额度` : '本地体验模式 · 策略来自模板，图片与视频由本地素材合成'}</span></div>; }

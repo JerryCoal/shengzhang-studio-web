@@ -4,7 +4,8 @@ import { changeLocalState, localUsername, readLocalState } from './local-vault';
 import { mergeRelayState } from '../server/web-merge.mjs';
 import { webPayload } from './web-payload';
 import catalog from './static-settings.json';
-import type { Integrations, Settings, State, WebPrivate } from './types';
+import type { Integrations, Settings, State, WebPrivate, TextProvider } from './types';
+import { providerLabel } from './model-provider';
 
 const defaults = (): WebPrivate => ({ credentials: {}, routes: { ...catalog.routes }, seedance: { region: 'volcengine', model: '', reservationUsd: 2, outputPriceUsd: 0 }, authorizations: [], verification: null });
 const privateOf = (state: State) => state.webPrivate || defaults();
@@ -13,8 +14,10 @@ let onlineBusy = false;
 const pendingMessage = '有一项联网请求尚未确认。请核对服务商结果，再到设置页解除锁定；不会自动重复提交。';
 function settingsOf(state: State): Settings {
   const saved = privateOf(state), model = saved.routes.strategy;
+  const credential = (provider: TextProvider): Settings['credential'] => ({ supported: true, editable: true, local: true, configured: !!saved.credentials[provider], suffix: saved.credentials[provider]?.slice(-4) || '', source: saved.credentials[provider] ? 'vault' : 'none', protection: '浏览器 · 登录密码 AES-GCM 加密', problem: '' });
   return { ...catalog, routes: saved.routes, model, ...catalog.models[model as keyof typeof catalog.models], authEnabled: true, version: '0.5.0 · 联网网页版', browserStorage: true,
     openaiConfigured: !!saved.credentials.openai, verification: saved.verification, apiDiagnostic: saved.apiDiagnostic,
+    providers: { openai: { configured: !!saved.credentials.openai, credential: credential('openai'), verification: saved.verification, apiDiagnostic: saved.apiDiagnostic }, deepseek: { configured: !!saved.credentials.deepseek, credential: credential('deepseek'), verification: saved.deepseekVerification || null, apiDiagnostic: saved.deepseekDiagnostic } },
     pendingWebRequest: saved.pending, recoveredWebResults: saved.recovery?.length || 0,
     credential: { supported: true, editable: true, local: true, configured: !!saved.credentials.openai, suffix: saved.credentials.openai?.slice(-4) || '', source: saved.credentials.openai ? 'vault' : 'none', protection: '浏览器 · 登录密码 AES-GCM 加密', problem: '' },
   } as Settings;
@@ -37,24 +40,35 @@ async function exclusive<T>(work: () => Promise<T>): Promise<T> {
 async function saveConnection(work: (saved: WebPrivate, state: State) => void) {
   return exclusive(async () => changeLocalState(state => { state.webPrivate ||= defaults(); if (state.webPrivate.pending) throw new Error(pendingMessage); work(state.webPrivate, state); }));
 }
+function textModel(saved: WebPrivate, path: string, body: unknown): string {
+  if (path.endsWith('/keyframes')) return 'gpt-image-2';
+  const stage = path.endsWith('/copy') ? 'copy' : path.endsWith('/classify') ? 'classification' : path.endsWith('/analysis') ? 'analysis' : path.endsWith('/strategies') ? (body as { stage?: 'strategy' | 'planning' })?.stage || 'strategy' : null;
+  return stage ? saved.routes[stage] : '';
+}
+function requestProvider(saved: WebPrivate, path: string, body: unknown): TextProvider | undefined {
+  if (path === '/settings/credential/check' || path.endsWith('/keyframes')) return 'openai';
+  if (path === '/settings/providers/deepseek/credential/check') return 'deepseek';
+  const model = textModel(saved, path, body);
+  return model ? catalog.models[model as keyof typeof catalog.models]?.provider as TextProvider || 'openai' : undefined;
+}
 async function relay(path: string, method: string, body: unknown, projectId?: string) {
   return exclusive(async () => {
     const started = await changeLocalState(state => {
       state.webPrivate ||= defaults();
       if (state.webPrivate.pending) throw new Error(pendingMessage);
-      const limited = state.webPrivate.apiDiagnostic;
-      const openaiModel = path.endsWith('/keyframes') ? 'gpt-image-2' : path.endsWith('/copy') ? state.webPrivate.routes.copy : path.endsWith('/classify') ? state.webPrivate.routes.classification : path.endsWith('/analysis') ? state.webPrivate.routes.analysis : path.endsWith('/strategies') ? state.webPrivate.routes[(body as { stage?: 'strategy' | 'planning' })?.stage || 'strategy'] : '';
-      if (limited?.kind === 'rate_limit' && limited.model === openaiModel && limited.retryAt && Date.parse(limited.retryAt) > Date.now()) throw new Error(`OpenAI 仍在限流等待期，请 ${Math.ceil((Date.parse(limited.retryAt) - Date.now()) / 1000)} 秒后再试。本次未发送新请求。`);
+      const provider = requestProvider(state.webPrivate, path, body), limited = provider === 'deepseek' ? state.webPrivate.deepseekDiagnostic : state.webPrivate.apiDiagnostic;
+      if (limited?.kind === 'rate_limit' && limited.model === textModel(state.webPrivate, path, body) && limited.retryAt && Date.parse(limited.retryAt) > Date.now()) throw new Error(`${providerLabel(provider || 'openai')} 仍在限流等待期，请 ${Math.ceil((Date.parse(limited.retryAt) - Date.now()) / 1000)} 秒后再试。本次未发送新请求。`);
       const pending = { id: crypto.randomUUID(), path, projectId, at: new Date().toISOString() };
       state.webPrivate.pending = pending; return pending;
     });
     const identity = localUsername(), pending = started.result, saved = privateOf(started.state);
     const base = webPayload(started.state, path, body, projectId);
     const credentials: WebPrivate['credentials'] = {};
-    const openai = path.includes('/settings/credential') || /\/(strategies|analysis|classify|copy|keyframes)$/.test(path);
+    const provider = requestProvider(saved, path, body), openai = provider === 'openai', deepseek = provider === 'deepseek';
     const seedance = /\/(seedance|video-status|generation-reset|tick)$/.test(path);
     const douyin = path.includes('/douyin/') || path.includes('/publications/') || path === '/tick';
     if (openai && saved.credentials.openai) credentials.openai = saved.credentials.openai;
+    if (deepseek && saved.credentials.deepseek) credentials.deepseek = saved.credentials.deepseek;
     if (seedance && saved.credentials.seedance) credentials.seedance = saved.credentials.seedance;
     if (douyin && saved.credentials.douyin) credentials.douyin = saved.credentials.douyin;
     const envelope = { path, method, body, state: base, credentials, routes: saved.routes, seedance: saved.seedance, authorizations: douyin ? saved.authorizations : [] };
@@ -92,6 +106,8 @@ async function relay(path: string, method: string, body: unknown, projectId?: st
       if (douyin) current.authorizations = response.authorizations || [];
       if (path === '/settings/credential/check') current.verification = response.response.verification || null;
       if (openai) current.apiDiagnostic = response.apiDiagnostic || (path === '/settings/credential/check' && current.apiDiagnostic?.endpoint !== 'models' ? current.apiDiagnostic : null);
+      if (deepseek) current.deepseekDiagnostic = response.deepseekDiagnostic || (path.endsWith('/credential/check') && current.deepseekDiagnostic?.endpoint !== 'models' ? current.deepseekDiagnostic : null);
+      if (path === '/settings/providers/deepseek/credential/check') current.deepseekVerification = response.response.providers?.deepseek?.verification || null;
       delete current.pending;
     });
     if (conflict) throw new Error('联网结果与同时进行的本地编辑有冲突。两份内容已保留；可在设置页导出保留的结果。');
@@ -127,6 +143,10 @@ export async function webAPI<T>(path: string, method = 'GET', body?: unknown): P
     const schema = z.object(Object.fromEntries(catalog.stages.map(s => [s.id, z.enum(Object.keys(catalog.models) as [string, ...string[]])]))).strict();
     await saveConnection(saved => { saved.routes = schema.parse(body) as WebPrivate['routes']; saved.verification = null; }); return settingsOf(await readLocalState()) as T;
   }
+  if (path === '/settings/providers/deepseek/credential' && ['PUT', 'DELETE'].includes(method)) {
+    await saveConnection(saved => { if (method === 'DELETE') delete saved.credentials.deepseek; else saved.credentials.deepseek = z.object({ apiKey: z.string().trim().regex(/^sk-[A-Za-z0-9_-]{16,509}$/) }).strict().parse(body).apiKey; saved.deepseekVerification = null; saved.deepseekDiagnostic = null; });
+    return settingsOf(await readLocalState()) as T;
+  }
   if (path === '/integrations/seedance' && ['PUT', 'DELETE'].includes(method)) {
     await saveConnection(saved => {
       if (method === 'DELETE') { delete saved.credentials.seedance; return; }
@@ -157,7 +177,7 @@ export async function webAPI<T>(path: string, method = 'GET', body?: unknown): P
     }
     const state = await readLocalState(); return { version: state.projects.map(p => `${p.id}:${p.revision}`).join('|') } as T;
   }
-  const online = path === '/settings/credential/check' || path.startsWith('/integrations/douyin/') || /^\/projects\/[^/]+\/(assets\/[^/]+\/(copy|keyframes|seedance|video-status|generation-reset)|publications\/[^/]+\/(automatic|stop-automatic|platform-status|platform-item|comments-sync)|comments\/classify)$/.test(path) || (body as { mode?: string })?.mode === 'openai';
+  const online = path === '/settings/credential/check' || path === '/settings/providers/deepseek/credential/check' || path.startsWith('/integrations/douyin/') || /^\/projects\/[^/]+\/(assets\/[^/]+\/(copy|keyframes|seedance|video-status|generation-reset)|publications\/[^/]+\/(automatic|stop-automatic|platform-status|platform-item|comments-sync)|comments\/classify)$/.test(path) || (body as { mode?: string })?.mode === 'openai';
   if (online) return await relay(path, method, body, path.startsWith('/projects/') ? path.split('/')[2] : undefined) as T;
   const result = await localAPI<unknown>(path, method, body);
   if (result && typeof result === 'object') {
